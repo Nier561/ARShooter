@@ -24,9 +24,8 @@ python main.py
 
 | Gesto | Acción |
 |-------|--------|
-| **Mano izquierda abierta, inclinada a la izquierda** | Rotar cámara izquierda |
-| **Mano izquierda abierta, inclinada a la derecha** | Rotar cámara derecha |
 | **Mano derecha en "pistola"** (índice extendido + pulgar arriba) | Disparar |
+| **R** | Reiniciar |
 | **ESC** | Salir |
 
 ## Arquitectura
