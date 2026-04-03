@@ -27,13 +27,6 @@ class Camera:
     # ------------------------------------------------------------------
     # API pública
     # ------------------------------------------------------------------
-    def rotate(self, yaw_input: float, dt: float):
-        """
-        Gira la cámara.
-        yaw_input: valor en [-1, 1] que viene del hand-tracker.
-        """
-        self.yaw += yaw_input * self.YAW_SPEED * self.SENSITIVITY * dt
-        self.yaw %= 360.0
 
     def apply(self):
         """Aplica la vista OpenGL. Debe llamarse después de glMatrixMode(GL_MODELVIEW)."""

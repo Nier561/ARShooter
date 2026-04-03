@@ -45,7 +45,7 @@ from OpenGL.GL import (
 from OpenGL.GLU import gluPerspective, gluNewQuadric, gluSphere, gluCylinder
 
 from camera import Camera
-from hand_tracker import HandTracker, INDEX_MCP, INDEX_TIP, WRIST
+from hand_tracker import HandTracker, INDEX_MCP, INDEX_TIP
 from asteroid import Asteroid
 from projectile import Projectile
 from sounds import SoundManager
@@ -65,7 +65,6 @@ _HAND_DEPTH   = 1.0
 _HAND_SCALE_X = 1.2
 _HAND_SCALE_Y = 0.9
 _HAND_OFFSET_R =  0.25   # mano derecha → derecha pantalla
-_HAND_OFFSET_L = -0.25   # mano izquierda → izquierda pantalla
 
 
 def _lm_to_world(lm, cam, offset):
@@ -125,7 +124,7 @@ STATE_OVER    = "game_over"
 class GameWorld:
     SPAWN_INTERVAL = 2.0
     MAX_ENEMIES    = 14
-    SHOOT_COOLDOWN = 0.28
+    SHOOT_COOLDOWN = 0.22
 
     # Puntos por tamaño de asteroide
     SCORE_MAP = {"small": 50, "medium": 100, "large": 200}
@@ -264,20 +263,6 @@ class GameWorld:
             return
 
         keys = pygame.key.get_pressed()
-
-        # Rotacion con mano izquierda
-        lm_l = self.tracker.landmarks_left
-        if lm_l and len(lm_l) > WRIST:
-            wrist_x = lm_l[WRIST][0]  # 0-1, centro ~0.5
-            # Zona muerta en el centro (0.35 - 0.65)
-            if wrist_x < 0.35:
-                # Mano a la izquierda de la imagen = derecha fisica → girar derecha
-                intensity = (0.35 - wrist_x) / 0.35  # 0..1
-                self.camera.rotate(intensity, dt)
-            elif wrist_x > 0.65:
-                # Mano a la derecha de la imagen = izquierda fisica → girar izquierda
-                intensity = (wrist_x - 0.65) / 0.35  # 0..1
-                self.camera.rotate(-intensity, dt)
 
         # Disparo — el tracker ya emite un pulso único por flick
         self._shoot_timer -= dt
@@ -432,9 +417,7 @@ class GameWorld:
 
     # ── Manos ─────────────────────────────────────────────────────────────
     def _render_hands(self):
-        lm_l = self.tracker.landmarks_left
         lm_r = self.tracker.landmarks_right
-        if lm_l: self._draw_hand_skeleton(lm_l, (0.3, 0.5, 1.0), _HAND_OFFSET_L)
         if lm_r: self._draw_hand_skeleton(lm_r, (0.2, 1.0, 0.5), _HAND_OFFSET_R)
 
     def _draw_hand_skeleton(self, landmarks, color, offset):
@@ -461,8 +444,10 @@ class GameWorld:
     # ── Disparo ───────────────────────────────────────────────────────────
     def _fire_projectile(self):
         """
-        Direccion de la bala basada en la orientacion del dedo indice.
-        Usa el vector MCP->TIP para determinar la direccion del disparo.
+        Direccion de la bala basada en donde esta la punta del dedo
+        en la pantalla. El centro de la imagen (0.5, 0.5) = disparo recto
+        hacia adelante. El desplazamiento del dedo respecto al centro
+        determina la desviacion lateral y vertical de la bala.
         """
         cam  = self.camera
         fwd  = cam.forward
@@ -473,20 +458,29 @@ class GameWorld:
             tip = lm_r[INDEX_TIP]
             mcp = lm_r[INDEX_MCP]
 
-            # Vector del dedo: MCP -> TIP en coordenadas de imagen
-            dx = tip[0] - mcp[0]   # >0 = derecha fisica
-            dy = tip[1] - mcp[1]   # <0 = arriba fisico
+            # Posicion del TIP relativa al centro de la imagen
+            aim_x = (tip[0] - 0.5)   # >0 = derecha fisica
+            aim_y = -(tip[1] - 0.5)  # >0 = arriba
 
-            # Componente lateral: cuanto se desvia el dedo a los lados
-            AMP_LATERAL = 2.0
-            # Componente vertical: cuanto apunta arriba/abajo
-            AMP_VERTICAL = 4.0
+            # Vector MCP->TIP para refinar la direccion del dedo
+            dx = tip[0] - mcp[0]
+            dy = -(tip[1] - mcp[1])
 
-            # Direccion: forward de la camara + desviacion lateral + vertical
+            # Escala no-lineal: mas amplificacion en los bordes
+            edge_boost_x = 1.0 + abs(aim_x) * 2.0  # 1.0 en centro, 2.0 en borde
+            edge_boost_y = 1.0 + abs(aim_y) * 2.0
+
+            AMP_POS  = 2.5   # Peso de la posicion en pantalla
+            AMP_DIR  = 1.5   # Peso de la direccion del dedo
+
+            offset_x = (aim_x * AMP_POS + dx * AMP_DIR) * edge_boost_x
+            offset_y = (aim_y * AMP_POS + dy * AMP_DIR) * edge_boost_y
+
+            # Construir direccion: forward + lateral + vertical
             direction = [
-                fwd[0] + rgt[0] * dx * AMP_LATERAL,
-                (-dy) * AMP_VERTICAL,
-                fwd[2] + rgt[2] * dx * AMP_LATERAL,
+                fwd[0] + rgt[0] * offset_x,
+                offset_y,
+                fwd[2] + rgt[2] * offset_x,
             ]
             # Normalizar
             mag = math.sqrt(sum(c*c for c in direction))
@@ -801,7 +795,7 @@ class GameWorld:
     def _draw_instructions_panel(self):
         """Panel lateral con instrucciones de como jugar."""
         # Panel en la esquina inferior izquierda
-        pw, ph = 380, 240
+        pw, ph = 380, 170
         px = 24
         py = self.height - ph - 24
         self._draw_panel(px, py, pw, ph, alpha=0.30,
@@ -822,14 +816,12 @@ class GameWorld:
         # Instrucciones
         instructions = [
             ("MANO DERECHA  (disparar)",           (120, 200, 140)),
-            ("  Extiende el dedo indice",           (170, 190, 175)),
-            ("  Haz un movimiento rapido hacia",    (170, 190, 175)),
-            ("  arriba (flick) para disparar",      (170, 190, 175)),
-            ("  Apunta con la direccion del dedo",  (170, 190, 175)),
+            ("  Apunta con el dedo indice",         (170, 190, 175)),
+            ("  mientras cierras los demas",        (170, 190, 175)),
+            ("  dedos para disparar",               (170, 190, 175)),
+            ("  La bala va hacia donde apuntas",    (170, 190, 175)),
             ("",              (0, 0, 0)),
-            ("MANO IZQUIERDA  (girar camara)",      (140, 170, 240)),
-            ("  Mueve la mano a la izquierda",      (170, 175, 200)),
-            ("  o derecha para rotar la vista",     (170, 175, 200)),
+            ("ESC = Salir del juego",               (160, 160, 170)),
         ]
 
         y_off = py + 43

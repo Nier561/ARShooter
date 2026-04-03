@@ -131,11 +131,6 @@ class HandTracker:
             return
 
         # Para detección de flick: historial de posición Y del TIP del índice
-        _tip_y_history = []   # lista de (timestamp, y)
-        _HISTORY_WINDOW = 0.12   # segundos hacia atrás que miramos
-        _FLICK_THRESH   = 0.18   # velocidad mínima en unidades/seg para disparar
-        _FLICK_COOLDOWN = 0.35   # segundos mínimos entre disparos
-        _last_flick_time = 0.0
         _last_ts = 0  # último timestamp enviado a MediaPipe
 
         frame_count = 0
@@ -176,39 +171,19 @@ class HandTracker:
                         lm_left, lm_right = self._assign_hand(
                             label, lm, lm_left, lm_right, use_legacy=False)
 
-                # Detección de flick con la mano derecha
-                now = _time.monotonic()
-                if lm_right and len(lm_right) > INDEX_TIP:
-                    tip_y = lm_right[INDEX_TIP][1]
+                # Detección de disparo: dedo índice extendido + demás cerrados
+                if lm_right and len(lm_right) > PINKY_TIP:
+                    # Índice extendido: TIP más arriba que PIP (coord imagen: menor Y = más arriba)
+                    index_extended = lm_right[INDEX_TIP][1] < lm_right[INDEX_PIP][1] - 0.02
 
-                    # Acumular historial
-                    _tip_y_history.append((now, tip_y))
-                    # Limpiar entradas viejas
-                    _tip_y_history = [(t, y) for t, y in _tip_y_history
-                                      if now - t <= _HISTORY_WINDOW]
+                    # Otros dedos cerrados: TIP más abajo que PIP
+                    middle_closed = lm_right[MIDDLE_TIP][1] > lm_right[MIDDLE_PIP][1]
+                    ring_closed   = lm_right[RING_TIP][1]   > lm_right[RING_PIP][1]
+                    pinky_closed  = lm_right[PINKY_TIP][1]  > lm_right[PINKY_PIP][1]
 
-                    # Calcular velocidad: dy/dt en el ventana
-                    if len(_tip_y_history) >= 2:
-                        t0, y0 = _tip_y_history[0]
-                        t1, y1 = _tip_y_history[-1]
-                        dt_hist = t1 - t0
-                        if dt_hist > 0.01:
-                            # dy negativo = TIP sube (coordenadas imagen: 0=arriba)
-                            velocity = (y1 - y0) / dt_hist
-
-                            # Índice extendido = TIP más arriba que PIP
-                            index_extended = (lm_right[INDEX_TIP][1] <
-                                              lm_right[INDEX_PIP][1] - 0.02)
-
-                            # Flick: velocidad negativa fuerte + índice extendido + cooldown
-                            if (velocity < -_FLICK_THRESH and
-                                index_extended and
-                                now - _last_flick_time > _FLICK_COOLDOWN):
-                                shoot = True
-                                _last_flick_time = now
-                                _tip_y_history.clear()   # reset para evitar doble disparo
-                else:
-                    _tip_y_history.clear()
+                    # Disparo si el índice apunta y los demás están cerrados
+                    if index_extended and middle_closed and ring_closed and pinky_closed:
+                        shoot = True
 
                 frame_count += 1
                 if frame_count % 120 == 0:
