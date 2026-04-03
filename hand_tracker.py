@@ -136,6 +136,7 @@ class HandTracker:
         _FLICK_THRESH   = 0.18   # velocidad mínima en unidades/seg para disparar
         _FLICK_COOLDOWN = 0.35   # segundos mínimos entre disparos
         _last_flick_time = 0.0
+        _last_ts = 0  # último timestamp enviado a MediaPipe
 
         frame_count = 0
         while not self._stop.is_set():
@@ -162,7 +163,11 @@ class HandTracker:
                             label, lm, lm_left, lm_right, use_legacy=True)
                 else:
                     import mediapipe as _mp
-                    ts    = int(_time.monotonic() * 1000)
+                    # Timestamp estrictamente creciente (microsegundos → ms)
+                    ts = int(_time.monotonic() * 1000)
+                    if ts <= _last_ts:
+                        ts = _last_ts + 1
+                    _last_ts = ts
                     img   = _mp.Image(image_format=_mp.ImageFormat.SRGB, data=rgb)
                     res   = hands.detect_for_video(img, ts)
                     for hand_lm, handedness in zip(res.hand_landmarks, res.handedness):

@@ -1,5 +1,5 @@
 """
-AR Survival Shooter - main.py
+AR Space Shooter - main.py
 Punto de entrada principal. Inicializa Pygame + OpenGL y arranca el bucle de juego.
 """
 
@@ -12,10 +12,11 @@ from game_world import GameWorld
 
 def main():
     pygame.init()
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
     WIDTH, HEIGHT = 1280, 720
     pygame.display.set_mode((WIDTH, HEIGHT), DOUBLEBUF | OPENGL)
-    pygame.display.set_caption("AR Survival Shooter")
-    pygame.mouse.set_visible(False)
+    pygame.display.set_caption("AR Space Shooter")
+    pygame.mouse.set_visible(True)   # Visible en menú
 
     glViewport(0, 0, WIDTH, HEIGHT)
 
@@ -31,6 +32,11 @@ def main():
             if event.type == QUIT:
                 running = False
             elif event.type == KEYDOWN and event.key == K_ESCAPE:
+                running = False
+
+            # Pasar eventos al GameWorld (menú, game over, etc.)
+            result = world.handle_event(event)
+            if result == "quit":
                 running = False
 
         world.update(dt)
